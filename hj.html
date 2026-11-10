@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chess Game</title>
+    <style>
+        /* --- Setup and Layout --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #1e1e24;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+            color: #f0d9b5;
+        }
+
+        .status {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            font-weight: bold;
+            color: #b58863;
+        }
+
+        /* --- Chessboard --- */
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            width: 480px;
+            height: 480px;
+            border: 4px solid #312e2b;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .square {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5rem;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.1s ease;
+        }
+
+        /* Square Colors */
+        .light {
+            background-color: #f0d9b5;
+        }
+
+        .dark {
+            background-color: #b58863;
+        }
+
+        /* Highlights */
+        .square.selected {
+            background-color: #7ab356 !important;
+        }
+
+        .square.hint {
+            background-color: #baca44 !important;
+        }
+
+        /* --- Pieces --- */
+        .piece {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .white-piece {
+            color: #ffffff;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.6));
+        }
+        
+        .black-piece {
+            color: #000000;
+            filter: drop-shadow(1px 1px 1px rgba(255,255,255,0.4));
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            background-color: #b58863;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #f0d9b5;
+            color: #312e2b;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Chess</h1>
+    <div class="status" id="statusText">White's Turn</div>
+
+    <div class="board" id="chessboard"></div>
+
+    <button onclick="resetGame()">Restart Game</button>
+
+    <script>
+        // Unicode symbols for chess pieces
+        const piecesSymbols = {
+            'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚', 'p': '♟',
+            'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔', 'P': '♙'
+        };
+
+        // Initial board setup layout
+        // Uppercase = White, Lowercase = Black
+        const initialBoard = [
+            ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+            ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+            ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+        ];
+
+        let boardState = [];
+        let turn = 'W'; // 'W' for White, 'B' for Black
+        let selectedSquare = null;
+
+        const boardElement = document.getElementById('chessboard');
+        const statusText = document.getElementById('statusText');
+
+        // Create the board grid UI
+        function createBoard() {
+            boardElement.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.createElement('div');
+                    square.classList.add('square');
+                    square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+                    square.dataset.row = r;
+                    square.dataset.col = c;
+                    
+                    const piece = boardState[r][c];
+                    if (piece) {
+                        const pieceElement = document.createElement('div');
+                        pieceElement.classList.add('piece');
+                        pieceElement.classList.add(piece === piece.toUpperCase() ? 'white-piece' : 'black-piece');
+                        pieceElement.innerText = piecesSymbols[piece];
+                        square.appendChild(pieceElement);
+                    }
+
+                    square.addEventListener('click', () => handleSquareClick(r, c));
+                    boardElement.appendChild(square);
+                }
+            }
+        }
+
+        // Handle square selection and movement logic
+        function handleSquareClick(r, c) {
+            const piece = boardState[r][c];
+            const isWhitePiece = piece && piece === piece.toUpperCase();
+            
+            // If a piece is already selected
+            if (selectedSquare) {
+                const [sr, sc] = selectedSquare;
+                
+                // Clicked the same square or another piece of the same color? Change selection
+                if (piece && ((turn === 'W' && isWhitePiece) || (turn === 'B' && !isWhitePiece))) {
+                    removeHighlights();
+                    selectNewSquare(r, c);
+                    return;
+                }
+
+                // Basic straight/diagonal movement checker (Simplified validation)
+                if (isValidMove(sr, sc, r, c)) {
+                    boardState[r][c] = boardState[sr][sc];
+                    boardState[sr][sc] = '';
+                    selectedSquare = null;
+                    turn = turn === 'W' ? 'B' : 'W';
+                    statusText.innerText = turn === 'W' ? "White's Turn" : "Black's Turn";
+                    removeHighlights();
+                    createBoard();
+                    return;
+                }
+                
+                // Clicked an invalid square? Clear choice
+                selectedSquare = null;
+                removeHighlights();
+            } else {
+                // Select a piece matching current active turn color
+                if (piece && ((turn === 'W' && isWhitePiece) || (turn === 'B' && !isWhitePiece))) {
+                    selectNewSquare(r, c);
+                }
+            }
+        }
+
+        function selectNewSquare(r, c) {
+            selectedSquare = [r, c];
+            const squareEl = boardElement.querySelector(`[data-row='${r}'][data-col='${c}']`);
+            squareEl.classList.add('selected');
+        }
+
+        function removeHighlights() {
+            const squares = boardElement.querySelectorAll('.square');
+            squares.forEach(sq => {
+                sq.classList.remove('selected');
+                sq.classList.remove('hint');
+            });
+        }
+
+        // Basic framework rule validator (Allows free movements but blocks completely wild selections)
+        function isValidMove(sr, sc, dr, dc) {
+            const piece = boardState[sr][sc].toLowerCase();
+            const rowDiff = Math.abs(dr - sr);
+            const colDiff = Math.abs(dc - sc);
+
+            // Pawns
+            if (piece === 'p') {
+                return rowDiff > 0 && rowDiff <= 2 && colDiff <= 1;
+            }
+            // Knights
+            if (piece === 'n') {
+                return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+            }
+            // Rooks
+            if (piece === 'r') {
+                return sr === dr || sc === dc;
+            }
+            // Bishops
+            if (piece === 'b') {
+                return rowDiff === colDiff;
+            }
+            // Queens
+            if (piece === 'q') {
+                return sr === dr || sc === dc || rowDiff === colDiff;
+            }
+            // Kings
+            if (piece === 'k') {
+                return rowDiff <= 1 && colDiff <= 1;
+            }
+            return false;
+        }
+
+        // Reload fresh settings
+        function resetGame() {
+            boardState = JSON.parse(JSON.stringify(initialBoard));
+            turn = 'W';
+            selectedSquare = null;
+            statusText.innerText = "White's Turn";
+            createBoard();
+        }
+
+        // Start initialization
+        resetGame();
+    </script>
+</body>
+</html>
